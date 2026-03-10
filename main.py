@@ -2,7 +2,7 @@ import re
 import threading
 import time
 import tkinter as tk
-import re
+
 from selenium import webdriver
 from selenium.common.exceptions import WebDriverException
 from selenium.webdriver.chrome.options import Options
@@ -77,12 +77,14 @@ class FloatingTipsApp:
 
         driver = None
         try:
+            display_text = "正在初始化浏览器..."
             driver = webdriver.Chrome(options=chrome_options)
             # 建议增加隐式等待
             driver.implicitly_wait(10)
 
             while self.running:
                 try:
+                    display_text = "正在加载公告页面..."
                     driver.get("https://www.kdocs.cn/l/colfFw2Piprw")
                     # 等待文档内容加载（根据 KDocs 特性，可能需要一点缓冲）
                     time.sleep(10)
@@ -90,6 +92,8 @@ class FloatingTipsApp:
                     driver.find_element(
                         By.CSS_SELECTOR, "button.is-icon .kd-icon-symbol_cross_two"
                     ).click()
+
+                    display_text = "正在查询公告内容..."
                     slow_scroll(driver)
 
                     # 1. 抓取页面上所有的 SVG text 标签
@@ -98,6 +102,7 @@ class FloatingTipsApp:
                     all_text = "".join([el.text for el in text_elements])
                     print(all_text)
 
+                    display_text = "正在提取公告内容..."
                     # 2. 使用正则提取 [StartNotice] 和 [EndNotice] 之间的内容
                     pattern = r"\[StartNotice\](.*?)\[EndNotice\]"
                     match = re.search(pattern, all_text, re.S)  # re.S 让 . 匹配换行符
