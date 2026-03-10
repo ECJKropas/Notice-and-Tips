@@ -2,7 +2,7 @@ import re
 import threading
 import time
 import tkinter as tk
-
+import re
 from selenium import webdriver
 from selenium.common.exceptions import WebDriverException
 from selenium.webdriver.chrome.options import Options
