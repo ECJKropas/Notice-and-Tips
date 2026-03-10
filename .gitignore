@@ -1,0 +1,9 @@
+.vscode/
+.zed/
+.idea/
+.trae/
+
+.venv/
+
+*.pyc
+**/__pycache__/
