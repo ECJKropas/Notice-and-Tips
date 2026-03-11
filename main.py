@@ -95,7 +95,7 @@ class FloatingTipsApp:
         self.countdown_label.bind("<ButtonRelease-1>", self.stop_move)
 
         # 右键退出
-        # self.root.bind("<Button-3>", self.on_closing)
+        self.root.bind("<Button-3>", self.on_closing)
 
         # 启动 Selenium 线程（守护线程）
         self.update_thread = threading.Thread(
