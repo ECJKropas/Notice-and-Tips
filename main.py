@@ -1,3 +1,4 @@
+from sqlite3 import SQLITE_DBCONFIG_ENABLE_FTS3_TOKENIZER
 import re
 import threading
 import time
@@ -5,10 +6,9 @@ import tkinter as tk
 
 from selenium import webdriver
 from selenium.common.exceptions import WebDriverException
-from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.by import By
-
+from selenium.webdriver.edge.options import Options as EdgeOptions
+from selenium.webdriver.edge.service import Service as EdgeService
 
 def slow_scroll(driver, step=500):
     # 找到滚动容器
@@ -71,18 +71,20 @@ class FloatingTipsApp:
 
     # --- Selenium 核心逻辑 ---
     def selenium_loader_task(self):
-        edge_options = Options()
+        edge_options = EdgeOptions()
+        edge_service = EdgeService(executable_path="edge/msedgedriver.exe")
         edge_options.add_argument("--headless")
         edge_options.add_argument("--disable-gpu")
 
         driver = None
         try:
-            driver = webdriver.Edge(options=edge_options,executable_path="edge/msedgedriver.exe")
+            driver = webdriver.Edge(options=edge_options, service=edge_service)
             # 建议增加隐式等待
             driver.implicitly_wait(10)
 
             while self.running:
                 try:
+                    self.root.after(0, lambda: self.label.config(text="系统启动中，正在连接网页..."))
                     driver.get("https://www.kdocs.cn/l/colfFw2Piprw")
                     # 等待文档内容加载（根据 KDocs 特性，可能需要一点缓冲）
                     time.sleep(10)
@@ -90,13 +92,15 @@ class FloatingTipsApp:
                     driver.find_element(
                         By.CSS_SELECTOR, "button.is-icon .kd-icon-symbol_cross_two"
                     ).click()
+
+                    self.root.after(0, lambda: self.label.config(text="系统启动中，正在加载..."))
                     slow_scroll(driver)
 
                     # 1. 抓取页面上所有的 SVG text 标签
                     text_elements = driver.find_elements(By.TAG_NAME, "text")
-                    print(text_elements)
+                    # print(text_elements)
                     all_text = "".join([el.text for el in text_elements])
-                    print(all_text)
+                    # print(all_text)
 
                     # 2. 使用正则提取 [StartNotice] 和 [EndNotice] 之间的内容
                     pattern = r"\[StartNotice\](.*?)\[EndNotice\]"
