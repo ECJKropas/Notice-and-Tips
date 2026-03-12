@@ -14,7 +14,10 @@ import re
 import threading
 import time
 import tkinter as tk
+from tkinter import font
 from typing import List
+import ctypes
+from ctypes import wintypes
 
 import os
 import toml
@@ -23,6 +26,32 @@ from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.edge.options import Options as EdgeOptions
 from selenium.webdriver.edge.service import Service as EdgeService
+
+# Windows API 字体加载函数
+def load_custom_font(font_path):
+    """使用Windows API加载自定义字体文件"""
+    if not os.path.exists(font_path):
+        return None
+    
+    try:
+        # 加载字体文件
+        gdi32 = ctypes.WinDLL('gdi32.dll')
+        kernel32 = ctypes.WinDLL('kernel32.dll')
+        
+        # 定义AddFontResourceEx函数
+        FR_PRIVATE = 0x10
+        
+        # 将路径转换为宽字符
+        font_path_w = ctypes.c_wchar_p(font_path)
+        
+        # 添加字体资源
+        result = gdi32.AddFontResourceExW(font_path_w, FR_PRIVATE, 0)
+        
+        if result > 0:
+            return True
+        return None
+    except Exception:
+        return None
 
 # 读取配置文件
 def load_config():
@@ -64,6 +93,9 @@ CLOUD_FILE_SCR = config["cloud_file_scr"]
 REFRESH_INTERVAL = config["refresh_interval"]
 FETCH_INTERVAL = config["fetch_interval"]
 
+# 字体变量，将在应用初始化时设置
+CUSTOM_FONT = "Microsoft YaHei"
+
 def slow_scroll(driver, step=500):
     """
     Slowly scroll a container to ensure content loads into the DOM (KDocs specific).
@@ -87,11 +119,23 @@ class FloatingTipsApp:
         self.root = root
         self.root.overrideredirect(True)
         self.root.attributes("-topmost", True)
-        self.root.configure(bg="#2C3E50")  # 深蓝色背景
+        self.root.configure(bg="white")  # 白色背景
         self.root.attributes("-alpha", 0.7)  # 默认半透明
 
         # 初始位置和大小
         self.root.geometry("460x80+500+100")
+
+        # 加载自定义字体
+        custom_font_path = os.path.join(os.path.dirname(__file__), "FLyouzichati-Regular-2.ttf")
+        font_family = "Microsoft YaHei"
+        if os.path.exists(custom_font_path):
+            try:
+                # 使用Windows API加载字体
+                if load_custom_font(custom_font_path):
+                    # 字体加载成功，使用正确的字体名称
+                    font_family = "福芦柚子茶体"
+            except Exception:
+                pass
 
         # Data for carousel
         self.tips_lock = threading.Lock()
@@ -108,9 +152,9 @@ class FloatingTipsApp:
         self.tip_label = tk.Label(
             root,
             text="系统启动中，正在初始化浏览器...",
-            fg="#ECF0F1",
-            bg="#2C3E50",
-            font=("Microsoft YaHei", 10, "bold"),
+            fg="#10aec2",
+            bg="white",
+            font=(font_family, 10, "bold"),
             wraplength=440,
             justify="left",
         )
@@ -119,9 +163,9 @@ class FloatingTipsApp:
         self.countdown_label = tk.Label(
             root,
             text="下次更新: -- 秒",
-            fg="#F1C40F",
-            bg="#2C3E50",
-            font=("Microsoft YaHei", 9),
+            fg="#10aec2",
+            bg="white",
+            font=(font_family, 9),
             anchor="e",
             justify="right",
         )
