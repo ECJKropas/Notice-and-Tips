@@ -17,12 +17,52 @@ import tkinter as tk
 from typing import List
 
 import os
+import toml
 
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.edge.options import Options as EdgeOptions
 from selenium.webdriver.edge.service import Service as EdgeService
 
+# 读取配置文件
+def load_config():
+    config_file = "config.toml"
+    default_config = {
+        "config": {
+            "cloud_file_scr": "https://www.kdocs.cn/l/colfFw2Piprw",
+            "refresh_interval": 60,
+            "fetch_interval": 300
+        }
+    }
+    
+    if not os.path.exists(config_file):
+        # 创建默认配置文件
+        with open(config_file, "w", encoding="utf-8") as f:
+            toml.dump(default_config, f)
+        return default_config["config"]
+    
+    try:
+        with open(config_file, "r", encoding="utf-8") as f:
+            config = toml.load(f)
+        # 确保配置项存在
+        for key, value in default_config["config"].items():
+            if key not in config.get("config", {}):
+                config["config"][key] = value
+        # 保存更新后的配置
+        with open(config_file, "w", encoding="utf-8") as f:
+            toml.dump(config, f)
+        return config["config"]
+    except Exception:
+        # 配置文件读取失败，使用默认值并重新创建
+        with open(config_file, "w", encoding="utf-8") as f:
+            toml.dump(default_config, f)
+        return default_config["config"]
+
+# 加载配置
+config = load_config()
+CLOUD_FILE_SCR = config["cloud_file_scr"]
+REFRESH_INTERVAL = config["refresh_interval"]
+FETCH_INTERVAL = config["fetch_interval"]
 
 def slow_scroll(driver, step=500):
     """
@@ -58,11 +98,11 @@ class FloatingTipsApp:
         self.tips: List[str] = []  # list of tip strings
         self.current_index = 0
         self.tip_shown_at = time.time()  # timestamp when current tip started showing
-        self.rotation_seconds = 60  # 每条显示时长（秒）
+        self.rotation_seconds = REFRESH_INTERVAL  # 每条显示时长（秒）
 
         # Running flag
         self.running = True
-        self.fetch_interval_seconds = 300  # selenium fetch interval (默认300秒)
+        self.fetch_interval_seconds = FETCH_INTERVAL  # selenium fetch interval (默认300秒)
 
         # UI 标签（两行：提示内容 + 倒计时）
         self.tip_label = tk.Label(
@@ -194,7 +234,7 @@ class FloatingTipsApp:
                     self.root.after(
                         0, lambda: self.tip_label.config(text="正在抓取公告...")
                     )
-                    driver.get("https://www.kdocs.cn/l/colfFw2Piprw")
+                    driver.get(CLOUD_FILE_SCR)
                     # 等待页面加载
                     time.sleep(8)
                     # 关闭可能的弹窗（选择性）

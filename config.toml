@@ -1,0 +1,4 @@
+[config]
+cloud_file_scr = "https://www.kdocs.cn/l/colfFw2Piprw"
+refresh_interval = 60
+fetch_interval = 300
