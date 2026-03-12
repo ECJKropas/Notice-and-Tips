@@ -16,8 +16,9 @@ import time
 import tkinter as tk
 from typing import List
 
+import os
+
 from selenium import webdriver
-from selenium.common.exceptions import WebDriverException
 from selenium.webdriver.common.by import By
 from selenium.webdriver.edge.options import Options as EdgeOptions
 from selenium.webdriver.edge.service import Service as EdgeService
@@ -175,7 +176,10 @@ class FloatingTipsApp:
         Background thread that periodically fetches the page and updates self.tips.
         """
         edge_options = EdgeOptions()
-        edge_service = EdgeService(executable_path="edge/msedgedriver.exe")
+        if os.path.exists("edge/msedgedriver.exe"):
+            edge_service = EdgeService(executable_path="edge/msedgedriver.exe")
+        else:
+            edge_service = EdgeService()
         edge_options.add_argument("--headless")
         edge_options.add_argument("--disable-gpu")
 
