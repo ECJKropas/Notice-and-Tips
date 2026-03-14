@@ -18,6 +18,7 @@ from tkinter import font
 from typing import List
 import ctypes
 from ctypes import wintypes
+import struct
 
 import os
 import toml
@@ -51,6 +52,93 @@ def load_custom_font(font_path):
             return True
         return None
     except Exception:
+        return None
+
+def extract_font_name_from_ttf(ttf_path):
+    """
+    从TTF文件中提取字体名称
+    返回字体名称或None（如果提取失败）
+    """
+    if not os.path.exists(ttf_path):
+        return None
+    
+    try:
+        with open(ttf_path, 'rb') as f:
+            # 读取字体文件头部
+            data = f.read(12)
+            if len(data) < 12:
+                return None
+            
+            # 解析头部
+            sfnt_version, num_tables = struct.unpack('>IH', data[:6])
+            
+            # 跳过头部剩余部分
+            f.seek(12)
+            
+            # 查找名称表
+            name_table_offset = None
+            name_table_length = None
+            
+            for i in range(num_tables):
+                table_data = f.read(16)
+                if len(table_data) < 16:
+                    break
+                
+                tag, checksum, offset, length = struct.unpack('>4sIII', table_data)
+                
+                if tag == b'name':
+                    name_table_offset = offset
+                    name_table_length = length
+                    break
+            
+            if name_table_offset is None:
+                return None
+            
+            # 读取名称表
+            f.seek(name_table_offset)
+            name_data = f.read(name_table_length)
+            
+            if len(name_data) < 6:
+                return None
+            
+            # 解析名称表头部
+            format_selector, name_record_count, string_storage_offset = struct.unpack('>HHH', name_data[:6])
+            
+            # 查找字体族名称（名称ID = 1，平台ID = 3，编码ID = 1，语言ID = 0x0804中文或0x0409英文）
+            font_name = None
+            
+            for i in range(name_record_count):
+                record_offset = 6 + i * 12
+                if record_offset + 12 > len(name_data):
+                    break
+                
+                platform_id, encoding_id, language_id, name_id, length, offset = struct.unpack('>HHHHHH', name_data[record_offset:record_offset+12])
+                
+                # 查找字体族名称（name_id = 1）
+                if name_id == 1:
+                    # 优先中文（0x0804）或英文（0x0409）名称
+                    if language_id in [0x0804, 0x0409] or font_name is None:
+                        string_offset = string_storage_offset + offset
+                        if string_offset + length <= len(name_data):
+                            try:
+                                # 优先尝试UTF-16BE解码（平台3常用）
+                                if platform_id == 3:
+                                    name_bytes = name_data[string_offset:string_offset+length]
+                                    font_name = name_bytes.decode('utf-16be').strip()
+                                else:
+                                    # UTF-8或Latin-1作为后备
+                                    name_bytes = name_data[string_offset:string_offset+length]
+                                    try:
+                                        font_name = name_bytes.decode('utf-8').strip()
+                                    except:
+                                        font_name = name_bytes.decode('latin-1').strip()
+                            except:
+                                continue
+            
+            return font_name if font_name else None
+    
+    except Exception as e:
+        print(f"提取字体名称时出错: {e}")
         return None
 
 # 读取配置文件
@@ -179,13 +267,22 @@ class FloatingTipsApp:
             try:
                 # 使用Windows API加载字体
                 if load_custom_font(custom_font_path):
-                    # 字体加载成功，使用正确的字体名称
-                    font_family = "福芦柚子茶体"
-                    font_load_success = True
-                    # 显示字体加载成功提示
-                    with self.tips_lock:
-                        self.error_message = f"✅ 字体加载成功: {CUSTOM_FONT_FILE}"
-                        self.error_display_until = time.time() + 5  # 成功提示显示5秒
+                    # 字体加载成功，动态提取字体名称
+                    extracted_font_name = extract_font_name_from_ttf(custom_font_path)
+                    if extracted_font_name:
+                        font_family = extracted_font_name
+                        font_load_success = True
+                        # 显示字体加载成功提示
+                        with self.tips_lock:
+                            self.error_message = f"✅ 字体加载成功: {extracted_font_name}"
+                            self.error_display_until = time.time() + 5  # 成功提示显示5秒
+                    else:
+                        # 字体加载成功但无法提取名称，使用文件名作为后备
+                        font_family = FALLBACK_FONT
+                        font_load_success = True
+                        with self.tips_lock:
+                            self.error_message = f"✅ 字体加载成功，但无法提取字体名称，使用备用字体"
+                            self.error_display_until = time.time() + 5
                 else:
                     # 字体文件存在但加载失败
                     with self.tips_lock:
