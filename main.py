@@ -60,7 +60,12 @@ def load_config():
         "config": {
             "cloud_file_scr": "https://www.kdocs.cn/l/colfFw2Piprw",
             "refresh_interval": 60,
-            "fetch_interval": 300
+            "fetch_interval": 300,
+            "error_display_duration": 30
+        },
+        "font": {
+            "custom_font_file": "FLyouzichati-Regular-2.ttf",
+            "fallback_font": "Microsoft YaHei"
         }
     }
     
@@ -73,28 +78,52 @@ def load_config():
     try:
         with open(config_file, "r", encoding="utf-8") as f:
             config = toml.load(f)
-        # 确保配置项存在
+        
+        # 确保配置项存在 - 处理config部分
+        if "config" not in config:
+            config["config"] = {}
         for key, value in default_config["config"].items():
-            if key not in config.get("config", {}):
+            if key not in config["config"]:
                 config["config"][key] = value
+        
+        # 确保配置项存在 - 处理font部分
+        if "font" not in config:
+            config["font"] = {}
+        for key, value in default_config["font"].items():
+            if key not in config["font"]:
+                config["font"][key] = value
+        
         # 保存更新后的配置
         with open(config_file, "w", encoding="utf-8") as f:
             toml.dump(config, f)
-        return config["config"]
+        
+        # 返回合并后的配置字典
+        merged_config = {}
+        merged_config.update(config["config"])
+        merged_config.update(config["font"])
+        return merged_config
+        
     except Exception:
         # 配置文件读取失败，使用默认值并重新创建
         with open(config_file, "w", encoding="utf-8") as f:
             toml.dump(default_config, f)
-        return default_config["config"]
+        
+        # 返回合并后的默认配置
+        merged_config = {}
+        merged_config.update(default_config["config"])
+        merged_config.update(default_config["font"])
+        return merged_config
 
 # 加载配置
 config = load_config()
 CLOUD_FILE_SCR = config["cloud_file_scr"]
 REFRESH_INTERVAL = config["refresh_interval"]
 FETCH_INTERVAL = config["fetch_interval"]
+ERROR_DISPLAY_DURATION = config["error_display_duration"]
 
-# 字体变量，将在应用初始化时设置
-CUSTOM_FONT = "Microsoft YaHei"
+# 字体配置
+CUSTOM_FONT_FILE = config["custom_font_file"]
+FALLBACK_FONT = config["fallback_font"]
 
 def slow_scroll(driver, step=500):
     """
@@ -125,24 +154,58 @@ class FloatingTipsApp:
         # 初始位置和大小
         self.root.geometry("460x80+500+100")
 
+        # Data for carousel and error management (initialize first)
+        self.tips_lock = threading.Lock()
+        self.tips: List[str] = []  # list of tip strings
+        self.current_index = 0
+        self.tip_shown_at = time.time()  # timestamp when current tip started showing
+        self.rotation_seconds = REFRESH_INTERVAL  # 每条显示时长（秒）
+
+        # Error state management
+        self.error_message = None  # current error message to display
+        self.error_display_until = 0  # timestamp until which error should be displayed
+        self.error_display_duration = ERROR_DISPLAY_DURATION  # error message display duration from config
+
+        # Running flag
+        self.running = True
+        self.fetch_interval_seconds = FETCH_INTERVAL  # selenium fetch interval (默认300秒)
+
         # 加载自定义字体
-        custom_font_path = os.path.join(os.path.dirname(__file__), "FLyouzichati-Regular-2.ttf")
-        font_family = "Microsoft YaHei"
+        custom_font_path = os.path.join(os.path.dirname(__file__), CUSTOM_FONT_FILE)
+        font_family = FALLBACK_FONT
+        font_load_success = False
+        
         if os.path.exists(custom_font_path):
             try:
                 # 使用Windows API加载字体
                 if load_custom_font(custom_font_path):
                     # 字体加载成功，使用正确的字体名称
                     font_family = "福芦柚子茶体"
-            except Exception:
-                pass
+                    font_load_success = True
+                    # 显示字体加载成功提示
+                    with self.tips_lock:
+                        self.error_message = f"✅ 字体加载成功: {CUSTOM_FONT_FILE}"
+                        self.error_display_until = time.time() + 5  # 成功提示显示5秒
+                else:
+                    # 字体文件存在但加载失败
+                    with self.tips_lock:
+                        self.error_message = f"字体文件加载失败: {CUSTOM_FONT_FILE}"
+                        self.error_display_until = time.time() + ERROR_DISPLAY_DURATION
+            except Exception as e:
+                # 字体加载异常
+                with self.tips_lock:
+                    self.error_message = f"字体加载异常: {str(e)[:60]}"
+                    self.error_display_until = time.time() + ERROR_DISPLAY_DURATION
+        else:
+            # 字体文件不存在
+            with self.tips_lock:
+                self.error_message = f"字体文件不存在: {CUSTOM_FONT_FILE}，使用备用字体"
+                self.error_display_until = time.time() + ERROR_DISPLAY_DURATION
 
-        # Data for carousel
-        self.tips_lock = threading.Lock()
-        self.tips: List[str] = []  # list of tip strings
-        self.current_index = 0
-        self.tip_shown_at = time.time()  # timestamp when current tip started showing
-        self.rotation_seconds = REFRESH_INTERVAL  # 每条显示时长（秒）
+        # Error state management
+        self.error_message = None  # current error message to display
+        self.error_display_until = 0  # timestamp until which error should be displayed
+        self.error_display_duration = ERROR_DISPLAY_DURATION  # error message display duration from config
 
         # Running flag
         self.running = True
@@ -308,37 +371,32 @@ class FloatingTipsApp:
                         parsed = self._parse_tips_from_raw(raw_content)
 
                         if parsed:
-                            # Replace tips atomically
+                            # Replace tips atomically and clear any error state
                             with self.tips_lock:
                                 self.tips = parsed
                                 self.current_index = 0
                                 self.tip_shown_at = time.time()
+                                self.error_message = None  # Clear error state on success
+                                self.error_display_until = 0
                             # Optional: immediately update UI to first tip
                             self._refresh_ui_now()
                         else:
                             # No parsed tips
                             with self.tips_lock:
                                 self.tips = []
-                            self.root.after(
-                                0,
-                                lambda: self.tip_label.config(
-                                    text="未检测到有效公告内容"
-                                ),
-                            )
+                                self.error_message = "未检测到有效公告内容"
+                                self.error_display_until = time.time() + self.error_display_duration
                     else:
                         with self.tips_lock:
                             self.tips = []
-                        self.root.after(
-                            0,
-                            lambda: self.tip_label.config(
-                                text="未检测到公告标记 [StartNotice]/[EndNotice]"
-                            ),
-                        )
+                            self.error_message = "未检测到公告标记 [StartNotice]/[EndNotice]"
+                            self.error_display_until = time.time() + self.error_display_duration
 
                 except Exception as e:
-                    # Keep UI informed
-                    msg = f"抓取失败: {str(e)[:80]}"
-                    self.root.after(0, lambda m=msg: self.tip_label.config(text=m))
+                    # Keep UI informed - set error state instead of directly updating label
+                    with self.tips_lock:
+                        self.error_message = f"抓取失败: {str(e)[:80]}"
+                        self.error_display_until = time.time() + self.error_display_duration
 
                 # 等待下次抓取（线程睡眠）
                 # 使用循环睡眠检测运行状态以便快速退出
@@ -349,7 +407,9 @@ class FloatingTipsApp:
 
         except Exception as e:
             error_msg = f"浏览器启动失败: {e}"
-            self.root.after(0, lambda m=error_msg: self.tip_label.config(text=m))
+            with self.tips_lock:
+                self.error_message = error_msg
+                self.error_display_until = time.time() + self.error_display_duration
         finally:
             if driver:
                 try:
@@ -383,8 +443,17 @@ class FloatingTipsApp:
         now = time.time()
         with self.tips_lock:
             tips_copy = list(self.tips)
+            error_message = self.error_message
+            error_display_until = self.error_display_until
 
-        if tips_copy:
+        # Check if we should display an error message
+        if error_message and now < error_display_until:
+            # Display error message
+            display_text = f"❌ {error_message}"
+            remaining_error_time = max(0, int(error_display_until - now))
+            countdown_text = f"错误信息将在 {remaining_error_time} 秒后清除"
+        elif tips_copy:
+            # Normal tip display logic
             # Ensure current_index is within range
             if self.current_index >= len(tips_copy):
                 self.current_index = 0
@@ -404,7 +473,6 @@ class FloatingTipsApp:
             # Build display text: headline + tip
             display_text = f"📢 最新公告 ({self.current_index + 1}/{len(tips_copy)}):\n{tips_copy[self.current_index]}"
             countdown_text = f"下次更新: {remaining} 秒"
-
         else:
             # No tips available: show placeholder and keep a short refresh cadence
             display_text = "未检测到公告内容或标记，正在等待抓取..."
